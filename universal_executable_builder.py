@@ -1,5 +1,4 @@
 import os
-import sys
 import shutil
 import subprocess
 
@@ -17,12 +16,19 @@ class PyInstallerGUI(tk.Tk):
         self.geometry("800x600")
 
         # Variables for settings
-        self.entry_point_var = tk.StringVar()
-        self.hidden_imports_var = tk.StringVar()
-        self.icon_var = tk.StringVar()
-        self.output_dir_var = tk.StringVar(value="dist")
-        self.onefile_var = tk.BooleanVar(value=True)
+        self.entry_point = tk.StringVar()
+        self.hidden_imports = tk.StringVar()
+        self.icon = tk.StringVar()
+        self.output_directory = tk.StringVar(value="dist")
+        self.onefile = tk.BooleanVar(value=True)
         self.data_files = []  # List of data file specifications
+
+        self.entry_point_entry = None
+        self.data_listbox = None
+        self.hidden_imports_entry = None
+        self.icon_entry = None
+        self.output_directory_entry = None
+        self.log_text = None
 
         # Create GUI components
         self.create_widgets()
@@ -34,16 +40,16 @@ class PyInstallerGUI(tk.Tk):
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Entry Point Section
+        # Entry Point section
         entry_frame = ttk.LabelFrame(main_frame, text="Entry Point")
         entry_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         ttk.Label(entry_frame, text="Main Python File:").grid(row=0, column=0, sticky="w")
-        self.entry_point_entry = ttk.Entry(entry_frame, textvariable=self.entry_point_var, width=50)
+        self.entry_point_entry = ttk.Entry(entry_frame, textvariable=self.entry_point, width=50)
         self.entry_point_entry.grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(entry_frame, text="Browse", command=self.browse_entry_point).grid(row=0, column=2, padx=5)
         entry_frame.columnconfigure(1, weight=1)
 
-        # Additional Data Files Section
+        # Additional Data Files section
         data_frame = ttk.LabelFrame(main_frame, text="Additional Data Files")
         data_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         self.data_listbox = tk.Listbox(data_frame, height=5)
@@ -57,7 +63,7 @@ class PyInstallerGUI(tk.Tk):
         # Hidden Imports Section
         hidden_frame = ttk.LabelFrame(main_frame, text="Hidden Imports (comma-separated)")
         hidden_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.hidden_imports_entry = ttk.Entry(hidden_frame, textvariable=self.hidden_imports_var, width=50)
+        self.hidden_imports_entry = ttk.Entry(hidden_frame, textvariable=self.hidden_imports, width=50)
         self.hidden_imports_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         hidden_frame.columnconfigure(0, weight=1)
 
@@ -65,7 +71,7 @@ class PyInstallerGUI(tk.Tk):
         icon_frame = ttk.LabelFrame(main_frame, text="Icon")
         icon_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
         ttk.Label(icon_frame, text="Icon File:").grid(row=0, column=0, sticky="w")
-        self.icon_entry = ttk.Entry(icon_frame, textvariable=self.icon_var, width=50)
+        self.icon_entry = ttk.Entry(icon_frame, textvariable=self.icon, width=50)
         self.icon_entry.grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(icon_frame, text="Browse", command=self.browse_icon).grid(row=0, column=2, padx=5)
         icon_frame.columnconfigure(1, weight=1)
@@ -74,15 +80,15 @@ class PyInstallerGUI(tk.Tk):
         output_frame = ttk.LabelFrame(main_frame, text="Output Directory")
         output_frame.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
         ttk.Label(output_frame, text="Directory:").grid(row=0, column=0, sticky="w")
-        self.output_dir_entry = ttk.Entry(output_frame, textvariable=self.output_dir_var, width=50)
-        self.output_dir_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(output_frame, text="Browse", command=self.browse_output_dir).grid(row=0, column=2, padx=5)
+        self.output_directory_entry = ttk.Entry(output_frame, textvariable=self.output_directory, width=50)
+        self.output_directory_entry.grid(row=0, column=1, sticky="ew", padx=5)
+        ttk.Button(output_frame, text="Browse", command=self.browse_output_directory).grid(row=0, column=2, padx=5)
         output_frame.columnconfigure(1, weight=1)
 
         # Options Section (One-file toggle)
         options_frame = ttk.Frame(main_frame)
         options_frame.grid(row=5, column=0, sticky="w", padx=5, pady=5)
-        ttk.Checkbutton(options_frame, text="Build one-file executable", variable=self.onefile_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(options_frame, text="Build one-file executable", variable=self.onefile).pack(side=tk.LEFT)
 
         # Build Button
         build_button = ttk.Button(main_frame, text="Build Executable", command=self.build_executable)
@@ -102,20 +108,21 @@ class PyInstallerGUI(tk.Tk):
         """
         file_path = filedialog.askopenfilename(filetypes=[("Python Files", "*.py")])
         if file_path:
-            self.entry_point_var.set(file_path)
+            self.entry_point.set(file_path)
 
     def add_data_file(self):
+
         """
             Add a data file to include in the build.
         """
         file_path = filedialog.askopenfilename()
         if file_path:
-            dest = simpledialog.askstring("Destination",
-                                          f"Enter destination folder for {os.path.basename(file_path)} (relative to executable):",
-                                          initialvalue=".")
-            if dest is None:
-                dest = "."
-            spec = f"{file_path};{dest}"
+            destination = simpledialog.askstring("Destination",
+                                                 f"Enter destination folder for {os.path.basename(file_path)} (relative to executable):",
+                                                 initialvalue=".")
+            if destination is None:
+                destination = "."
+            spec = f"{file_path};{destination}"
             self.data_files.append(spec)
             self.data_listbox.insert(tk.END, spec)
 
@@ -125,13 +132,13 @@ class PyInstallerGUI(tk.Tk):
         """
         folder_path = filedialog.askdirectory()
         if folder_path:
-            dest = simpledialog.askstring("Destination",
-                                          f"Enter destination folder for {os.path.basename(folder_path)} (relative to executable):",
-                                          initialvalue=os.path.basename(folder_path))
-            if dest is None:
-                dest = os.path.basename(folder_path)
+            destination = simpledialog.askstring("Destination",
+                                                 f"Enter destination folder for {os.path.basename(folder_path)} (relative to executable):",
+                                                 initialvalue=os.path.basename(folder_path))
+            if destination is None:
+                destination = os.path.basename(folder_path)
             # Note: appending os.sep to indicate folder
-            spec = f"{folder_path}{os.sep};{dest}"
+            spec = f"{folder_path}{os.sep};{destination}"
             self.data_files.append(spec)
             self.data_listbox.insert(tk.END, spec)
 
@@ -151,15 +158,15 @@ class PyInstallerGUI(tk.Tk):
         """
         file_path = filedialog.askopenfilename(filetypes=[("Icon Files", "*.ico"), ("All Files", "*.*")])
         if file_path:
-            self.icon_var.set(file_path)
+            self.icon.set(file_path)
 
-    def browse_output_dir(self):
+    def browse_output_directory(self):
         """
             Browse and select an output directory.
         """
         directory = filedialog.askdirectory()
         if directory:
-            self.output_dir_var.set(directory)
+            self.output_directory.set(directory)
 
     @staticmethod
     def cleanup_build_artifacts():
@@ -176,39 +183,40 @@ class PyInstallerGUI(tk.Tk):
         """
             Build the executable using PyInstaller with the selected options.
         """
-        entry_point = self.entry_point_var.get()
+        entry_point = self.entry_point.get()
         if not entry_point:
             messagebox.showerror("Error", "Please select an entry point file.")
             return
 
         # Build the PyInstaller command
-        cmd = ["pyinstaller", entry_point, "--onefile" if self.onefile_var.get() else "--onedir"]
+        command = ["pyinstaller", entry_point, "--onefile" if self.onefile.get() else "--onedir"]
         for data in self.data_files:
-            cmd.extend(["--add-data", data])
-        hidden_imports = [imp.strip() for imp in self.hidden_imports_var.get().split(",") if imp.strip()]
-        for imp in hidden_imports:
-            cmd.extend(["--hidden-import", imp])
-        icon = self.icon_var.get()
+            command.extend(["--add-data", data])
+        hidden_imports = [current_import.strip() for current_import in self.hidden_imports.get().split(",") if
+                          current_import.strip()]
+        for current_import in hidden_imports:
+            command.extend(["--hidden-import", current_import])
+        icon = self.icon.get()
         if icon:
-            cmd.extend(["--icon", icon])
-        output_dir = self.output_dir_var.get()
-        cmd.extend(["--distpath", output_dir])
+            command.extend(["--icon", icon])
+        output_directory = self.output_directory.get()
+        command.extend(["--distpath", output_directory])
 
         self.cleanup_build_artifacts()
 
-        self.log_text.insert(tk.END, "Running command:\n" + " ".join(cmd) + "\n\n")
+        self.log_text.insert(tk.END, "Running command:\n" + " ".join(command) + "\n\n")
         self.log_text.see(tk.END)
         self.update_idletasks()
 
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    universal_newlines=True)
-            for line in proc.stdout:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       universal_newlines=True)
+            for line in process.stdout:
                 self.log_text.insert(tk.END, line)
                 self.log_text.see(tk.END)
                 self.update_idletasks()
-            proc.wait()
-            if proc.returncode == 0:
+            process.wait()
+            if process.returncode == 0:
                 self.log_text.insert(tk.END, "\nExecutable built successfully!")
             else:
                 self.log_text.insert(tk.END, "\nBuild failed. Check the log above for details.")
