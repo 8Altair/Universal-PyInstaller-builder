@@ -68,8 +68,8 @@ class PyInstallerGUI(tk.Tk):
         executable_frame = ttk.LabelFrame(main_frame, text="Executable Name")
         executable_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         ttk.Label(executable_frame, text="Name:").grid(row=0, column=0, sticky="w")
-        ex = ttk.Entry(executable_frame, textvariable=self.executable_name, width=50)
-        ex.grid(row=0, column=1, sticky="ew", padx=5)
+        executable = ttk.Entry(executable_frame, textvariable=self.executable_name, width=50)
+        executable.grid(row=0, column=1, sticky="ew", padx=5)
         executable_frame.columnconfigure(1, weight=1)
 
         # Additional Data Files section
