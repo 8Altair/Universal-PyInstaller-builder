@@ -6,28 +6,31 @@ from pathlib import Path
 from sys import exit
 
 import tkinter as tk
-import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, simpledialog, scrolledtext, ttk
+import customtkinter as ctk
+
+from tkinter import filedialog, messagebox, simpledialog, ttk
+from CTkToolTip import CTkToolTip
 
 BUILD_DIRECTORY = "build"
 SPECIFICATION_EXTENSION = ".spec"
 
+# Initialize CustomTkinter appearance (dark mode and theme accent)
+ctk.set_appearance_mode("Dark")            # Dark mode for modern look
+ctk.set_default_color_theme("blue")        # You can use "dark-blue" or others as needed
 
-class PyInstallerGUI(tk.Tk):
+
+class PyInstallerGUI(ctk.CTk):
     def __init__(self):
         """
             Initialize the PyInstaller Builder GUI application.
         """
         super().__init__()
+        # Dark appearance mode already set above...
+        self.configure(fg_color="#1E1E1E")  # ← forces the root window to a near-black
         self.title("Universal PyInstaller Builder")
         self.geometry("900x900")
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        # Increase all default fonts by 5
-        for fname in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
-            f = tkfont.nametofont(fname)
-            f.configure(size=f.cget("size") + 5, weight="bold")
 
         # Variables for settings
         self.entry_point = tk.StringVar()
@@ -39,10 +42,12 @@ class PyInstallerGUI(tk.Tk):
         self.data_files = []  # List of data file specifications
 
         self.entry_point_entry = None
+        self.executable_name_entry = None
         self.data_listbox = None
         self.hidden_imports_entry = None
         self.icon_entry = None
         self.output_directory_entry = None
+        self.onefile_check = None
         self.log_text = None
 
         # Create GUI components
@@ -53,77 +58,106 @@ class PyInstallerGUI(tk.Tk):
             Create and layout all the GUI widgets.
         """
         main_frame = ttk.Frame(self, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.pack(fill="both", expand=True)
+
+        # Main container frame
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")  # transparent uses window default dark bg
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame.grid_rowconfigure(15, weight=1)  # make the log section expandable (row index 15 below)
+        main_frame.grid_columnconfigure(0, weight=1)  # make content stretch horizontally
+
+        # Define fonts for section headers and field labels (for modern, readable text)
+        section_font = ("Segoe UI", 16, "bold")
+        label_font = ("Segoe UI", 14, "bold")
 
         # Entry Point section
-        entry_frame = ttk.LabelFrame(main_frame, text="Entry Point")
-        entry_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        ttk.Label(entry_frame, text="Main Python File:").grid(row=0, column=0, sticky="w")
-        self.entry_point_entry = ttk.Entry(entry_frame, textvariable=self.entry_point, width=50)
+        ctk.CTkLabel(main_frame, text="Entry Point", font=section_font).grid(row=0, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=0, column=1, text="Select the main .py file where your program starts.")
+        entry_frame = ctk.CTkFrame(main_frame)
+        entry_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
+        entry_frame.grid_columnconfigure(1, weight=1)  # Make the entry field expand in this frame
+        ctk.CTkLabel(entry_frame, text="Main Python File:", font=label_font).grid(row=0, column=0, sticky="w")
+        self.entry_point_entry = ctk.CTkEntry(entry_frame, textvariable=self.entry_point)
         self.entry_point_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(entry_frame, text="Browse", command=self.browse_entry_point, cursor="hand1").grid(row=0, column=2, padx=5)
-        entry_frame.columnconfigure(1, weight=1)
+        ctk.CTkButton(entry_frame, text="Browse", command=self.browse_entry_point).grid(row=0, column=2, padx=5)
 
         # Executable Name Section
-        executable_frame = ttk.LabelFrame(main_frame, text="Executable Name")
-        executable_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
-        ttk.Label(executable_frame, text="Name:").grid(row=0, column=0, sticky="w")
-        executable = ttk.Entry(executable_frame, textvariable=self.executable_name, width=50)
-        executable.grid(row=0, column=1, sticky="ew", padx=5)
-        executable_frame.columnconfigure(1, weight=1)
+        ctk.CTkLabel(main_frame, text="Executable Name", font=section_font).grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=2, column=1, text="Specifies the name of the generated .exe.")
+        exe_frame = ctk.CTkFrame(main_frame)
+        exe_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+        exe_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(exe_frame, text="Name:", font=label_font).grid(row=0, column=0, sticky="w")
+        self.executable_name_entry = ctk.CTkEntry(exe_frame, textvariable=self.executable_name)
+        self.executable_name_entry.grid(row=0, column=1, sticky="ew", padx=5)
 
         # Additional Data Files section
-        data_frame = ttk.LabelFrame(main_frame, text="Additional Data Files")
-        data_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.data_listbox = tk.Listbox(data_frame, height=5)
+        ctk.CTkLabel(main_frame, text="Additional Data Files",
+                     font=section_font).grid(row=4, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=4, column=1, text="Include extra files/folders.")
+        data_frame = ctk.CTkFrame(main_frame)
+        data_frame.grid(row=5, column=0, sticky="ew", padx=5, pady=5)
+        data_frame.grid_columnconfigure((0, 1, 2), weight=1)  # Distribute extra space across three columns
+        # Listbox for data files – using a standard tkinter Listbox, but styled to match dark theme
+        self.data_listbox = tk.Listbox(data_frame, height=5, selectmode=tk.SINGLE)
+        self.data_listbox.configure(background="#2B2B2B", foreground="white",
+                                    selectbackground="#3A9FBF", highlightthickness=0)
         self.data_listbox.grid(row=0, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-        ttk.Button(data_frame, text="Add File", command=self.add_data_file, cursor="hand1").grid(row=1, column=0, padx=100, pady=5)
-        ttk.Button(data_frame, text="Add Folder", command=self.add_data_folder, cursor="hand1").grid(row=1, column=1, padx=70, pady=5)
-        ttk.Button(data_frame, text="Remove Selected", command=self.remove_data_file, cursor="hand1").grid(row=1, column=2, padx=5, pady=5)
-        data_frame.columnconfigure(0, weight=1)
+        # Buttons for adding/removing data files
+        ctk.CTkButton(data_frame, text="Add File", command=self.add_data_file).grid(row=1, column=0, padx=5, pady=5)
+        ctk.CTkButton(data_frame, text="Add Folder", command=self.add_data_folder).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkButton(data_frame, text="Remove Selected",
+                      command=self.remove_data_file).grid(row=1, column=2, padx=5, pady=5)
 
         # Hidden Imports Section
-        hidden_frame = ttk.LabelFrame(main_frame, text="Hidden Imports (comma-separated)")
-        hidden_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
-        self.hidden_imports_entry = ttk.Entry(hidden_frame, textvariable=self.hidden_imports, width=50)
-        self.hidden_imports_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        hidden_frame.columnconfigure(0, weight=1)
+        ctk.CTkLabel(main_frame, text="Hidden Imports (comma-separated)",
+                     font=section_font).grid(row=6, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=6, column=1, text = "Specify modules not auto-detected.")
+        hidden_frame = ctk.CTkFrame(main_frame)
+        hidden_frame.grid(row=7, column=0, sticky="ew", padx=5, pady=5)
+        hidden_frame.grid_columnconfigure(0, weight=1)
+        self.hidden_imports_entry = ctk.CTkEntry(hidden_frame, textvariable=self.hidden_imports)
+        self.hidden_imports_entry.grid(row=0, column=0, sticky="ew", padx=5)
 
         # Icon Selection Section
-        icon_frame = ttk.LabelFrame(main_frame, text="Icon")
-        icon_frame.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
-        ttk.Label(icon_frame, text="Icon File:").grid(row=0, column=0, sticky="w")
-        self.icon_entry = ttk.Entry(icon_frame, textvariable=self.icon, width=50)
+        ctk.CTkLabel(main_frame, text="Icon", font=section_font).grid(row=8, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=8, column=1, text = "Path to a .ico file to embed in your executable.")
+        icon_frame = ctk.CTkFrame(main_frame)
+        icon_frame.grid(row=9, column=0, sticky="ew", padx=5, pady=5)
+        icon_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(icon_frame, text="Icon File:", font=label_font).grid(row=0, column=0, sticky="w")
+        self.icon_entry = ctk.CTkEntry(icon_frame, textvariable=self.icon)
         self.icon_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(icon_frame, text="Browse", command=self.browse_icon, cursor="hand1").grid(row=0, column=2, padx=5)
-        icon_frame.columnconfigure(1, weight=1)
+        ctk.CTkButton(icon_frame, text="Browse", command=self.browse_icon).grid(row=0, column=2, padx=5)
 
         # Output Directory Section
-        output_frame = ttk.LabelFrame(main_frame, text="Output Directory")
-        output_frame.grid(row=5, column=0, sticky="ew", padx=5, pady=5)
-        ttk.Label(output_frame, text="Directory:").grid(row=0, column=0, sticky="w")
-        self.output_directory_entry = ttk.Entry(output_frame, textvariable=self.output_directory, width=50)
+        ctk.CTkLabel(main_frame, text="Output Directory",
+                     font=section_font).grid(row=10, column=0, sticky="w", pady=(5, 0))
+        self.place_help(main_frame, row=10, column=1, text = "Destination folder for build output.")
+        out_frame = ctk.CTkFrame(main_frame)
+        out_frame.grid(row=11, column=0, sticky="ew", padx=5, pady=5)
+        out_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(out_frame, text="Directory:", font=label_font).grid(row=0, column=0, sticky="w")
+        self.output_directory_entry = ctk.CTkEntry(out_frame, textvariable=self.output_directory)
         self.output_directory_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(output_frame, text="Browse", command=self.browse_output_directory, cursor="hand1").grid(row=0, column=2, padx=5)
-        output_frame.columnconfigure(1, weight=1)
+        ctk.CTkButton(out_frame, text="Browse", command=self.browse_output_directory).grid(row=0, column=2, padx=5)
 
         # Options Section (One-file toggle)
-        options_frame = ttk.Frame(main_frame)
-        options_frame.grid(row=6, column=0, sticky="w", padx=5, pady=5)
-        ttk.Checkbutton(options_frame, text="Build one-file executable", variable=self.onefile, cursor="hand2").pack(side=tk.LEFT)
+        self.onefile_check = ctk.CTkCheckBox(main_frame, text="Build one-file executable", variable=self.onefile)
+        self.onefile_check.grid(row=12, column=0, sticky="w", padx=5, pady=5)
+        self.place_help(main_frame, row=12, column=1, text = "Choose single-file or folder build.")
 
         # Build Button
-        build_button = ttk.Button(main_frame, text="Build Executable", command=self.build_executable, cursor="hand1")
-        build_button.grid(row=7, column=0, pady=10)
+        build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
+        build_button.grid(row=13, column=0, pady=10)
+        self.place_help(main_frame, row=14, column=1, text = "Displays real-time output from PyInstaller during build.")
 
         # Build Log Output
-        log_frame = ttk.LabelFrame(main_frame, text="Build Log")
-        log_frame.grid(row=8, column=0, sticky="nsew", padx=5, pady=5)
-        log_text = scrolledtext.ScrolledText(log_frame, height=10, bd=0, highlightthickness=0)
-        log_text.pack(fill=tk.BOTH, expand=True)
-        log_text.configure(state=tk.DISABLED)
-        main_frame.rowconfigure(8, weight=1)
-        self.log_text = log_text
+        ctk.CTkLabel(main_frame, text="Build Log", font=section_font).grid(row=14, column=0, sticky="w", pady=(5, 0))
+        # Text box for log output. CTkTextbox provides a scrollbar automatically in customtkinter >=5
+        self.log_text = ctk.CTkTextbox(main_frame, height=180)
+        self.log_text.grid(row=15, column=0, sticky="nsew", padx=5, pady=5)
+        self.log_text.configure(state="disabled")  # Start as read-only
 
     def browse_entry_point(self):
         """
@@ -212,7 +246,16 @@ class PyInstallerGUI(tk.Tk):
             specification.unlink()
 
     def assemble_commands(self):
-        command = ["pyinstaller", self.entry_point, "--onefile" if self.onefile.get() else "--onedir"]
+        if not self.entry_point.get():
+            messagebox.showerror("Error", "Please select an entry point file.")
+            return None
+        command = ["pyinstaller", self.entry_point.get(),
+                   "--onefile" if self.onefile.get() else "--onedir", "--noconsole"]
+
+        executable_name = self.executable_name.get().strip()
+        if executable_name:
+            command.extend(["--name", executable_name])
+
         for data in self.data_files:
             command.extend(["--add-data", data])
         for hidden_import in filter(None, map(str.strip, self.hidden_imports.get().split(","))):
@@ -236,27 +279,42 @@ class PyInstallerGUI(tk.Tk):
         command = self.assemble_commands()
         self.cleanup_build_artifacts()
 
-        self.log_text.insert(tk.END, "Running command:\n" + " ".join(command) + "\n\n")
-        self.log_text.see(tk.END)
-        self.update_idletasks()
+        self.append_log("Running command:\n" + " ".join(command) + "\n\n")
 
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
             for line in process.stdout:
-                self.log_text.insert(tk.END, line)
-                self.log_text.see(tk.END)
-                self.update_idletasks()
+                self.append_log(line)
+
+            self.cleanup_build_artifacts()
 
             return_code = process.wait()
             if return_code == 0:
-                self.log_text.insert(tk.END, "\nExecutable built successfully.")
+                self.append_log("\nExecutable built successfully.")
             else:
-                self.log_text.insert(tk.END, "\nBuild failed. Check the log above for details.")
+                self.append_log("\nBuild failed. Check the log above for details.")
 
         except (OSError, subprocess.SubprocessError) as e:
-            self.log_text.insert(tk.END, f"\nBuild failed: {e}")
+            self.append_log(f"\nBuild failed: {e}")
             messagebox.showerror("Build Error", str(e))
+
+    @staticmethod
+    def place_help(parent, row, column, text):
+        """
+            Place a small "?" button at (row, col) that shows "text" when clicked.
+        """
+        # Create a CTkButton with equal width/height and corner_radius to make it a circle
+        size = 24
+        button = ctk.CTkButton(parent, text="❓", width=size, height=size, corner_radius=size // 2, fg_color="#3A3A3A",
+            hover_color="#4A4A4A", text_color="white", font=("", 10, "bold"), border_width=0,
+            command=lambda: None)
+        button.grid(row=row, column=column, sticky="n", padx=(2, 10))
+
+        # Attach a tooltip that appears on hover
+        CTkToolTip(widget=button, message=text, delay=0.3, follow=True,  x_offset=10, y_offset=10, alpha=0.9,
+                   bg_color="#2B2B2B", text_color="white", corner_radius=6, border_width=0,  border_color="#4A4A4A",
+                   wraplength=200, padding=(8, 4), font=("Segoe UI", 15),justify="left",)
 
     def on_close(self):
         """
