@@ -4,12 +4,14 @@ import subprocess
 
 from pathlib import Path
 from sys import exit
+from threading import Thread
 
 import tkinter as tk
 import customtkinter as ctk
 
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog
 from CTkToolTip import CTkToolTip
+
 
 BUILD_DIRECTORY = "build"
 SPECIFICATION_EXTENSION = ".spec"
@@ -19,14 +21,25 @@ ctk.set_appearance_mode("Dark")            # Dark mode for modern look
 ctk.set_default_color_theme("blue")        # You can use "dark-blue" or others as needed
 
 
+def no_operation(self, *args, **kwargs):    # Monkey-patch CTkToolTip so it satisfies the scaling tracker’s calls:
+
+    """
+        A no-op handler that matches the expected signature of:
+          block_update_dimensions_event(self)
+          unblock_update_dimensions_event(self)
+    """
+    return None
+
+CTkToolTip.block_update_dimensions_event = no_operation
+CTkToolTip.unblock_update_dimensions_event = no_operation
+
 class PyInstallerGUI(ctk.CTk):
     def __init__(self):
         """
             Initialize the PyInstaller Builder GUI application.
         """
         super().__init__()
-        # Dark appearance mode already set above...
-        self.configure(fg_color="#1E1E1E")  # ← forces the root window to a near-black
+        self.configure(fg_color="#1E1E1E")  # Forces the root window to a near-black
         self.title("Universal PyInstaller Builder")
         self.geometry("900x900")
 
@@ -48,6 +61,7 @@ class PyInstallerGUI(ctk.CTk):
         self.icon_entry = None
         self.output_directory_entry = None
         self.onefile_check = None
+        self.build_button = None
         self.log_text = None
 
         # Create GUI components
@@ -57,9 +71,6 @@ class PyInstallerGUI(ctk.CTk):
         """
             Create and layout all the GUI widgets.
         """
-        main_frame = ttk.Frame(self, padding="10")
-        main_frame.pack(fill="both", expand=True)
-
         # Main container frame
         main_frame = ctk.CTkFrame(self, fg_color="transparent")  # transparent uses window default dark bg
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -148,8 +159,8 @@ class PyInstallerGUI(ctk.CTk):
         self.place_help(main_frame, row=12, column=1, text = "Choose single-file or folder build.")
 
         # Build Button
-        build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
-        build_button.grid(row=13, column=0, pady=10)
+        self.build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
+        self.build_button.grid(row=13, column=0, pady=10)
         self.place_help(main_frame, row=14, column=1, text = "Displays real-time output from PyInstaller during build.")
 
         # Build Log Output
@@ -235,6 +246,12 @@ class PyInstallerGUI(ctk.CTk):
         self.log_text.configure(state=tk.DISABLED)
         self.update_idletasks()
 
+    def _append_log_async(self, text: str):
+        """
+            Schedule a log append on the GUI thread.
+        """
+        self.after_idle(self.append_log, text)
+
     @staticmethod
     def cleanup_build_artifacts():
         """
@@ -268,6 +285,41 @@ class PyInstallerGUI(ctk.CTk):
         command.extend(["--distpath", self.output_directory.get()])
         return command
 
+    def _run_build(self):
+        """
+            Runs in a background thread—executes PyInstaller and updates the log.
+        """
+        command = self.assemble_commands()
+        if not command:
+            # Re-enable the button if assemble failed
+            self.after_idle(self.build_button.configure, {"state": "normal"})
+            return
+
+        # Clean artifacts before build
+        self.cleanup_build_artifacts()
+
+        # Log the command asynchronously
+        self._append_log_async("Running command:\n" + " ".join(command) + "\n\n")
+
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+            for line in process.stdout: # Send each line back to the GUI thread
+                self._append_log_async(line)
+
+            code = process.wait()
+            if code == 0:
+                self._append_log_async("\nExecutable built successfully.\n")
+            else:
+                self._append_log_async("\nBuild failed. Check the log above for details.\n")
+
+        except Exception as e:
+            self._append_log_async(f"\nBuild failed: {e}\n")
+            self.after_idle(messagebox.showerror, "Build Error", str(e))
+        finally:
+            self.cleanup_build_artifacts()  # Clean up artifacts after build
+            self.after_idle(self.build_button.configure, {"state": "normal"})  # Re-enable the build button
+
     def build_executable(self):
         """
             Build the executable using PyInstaller with the selected options.
@@ -276,28 +328,12 @@ class PyInstallerGUI(ctk.CTk):
             messagebox.showerror("Error", "Please select an entry point file.")
             return
 
-        command = self.assemble_commands()
-        self.cleanup_build_artifacts()
+        # Disable the build button so user can't start multiple builds
+        self.build_button.configure(state="disabled")
 
-        self.append_log("Running command:\n" + " ".join(command) + "\n\n")
-
-        try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
-            for line in process.stdout:
-                self.append_log(line)
-
-            self.cleanup_build_artifacts()
-
-            return_code = process.wait()
-            if return_code == 0:
-                self.append_log("\nExecutable built successfully.")
-            else:
-                self.append_log("\nBuild failed. Check the log above for details.")
-
-        except (OSError, subprocess.SubprocessError) as e:
-            self.append_log(f"\nBuild failed: {e}")
-            messagebox.showerror("Build Error", str(e))
+        # Start background thread
+        thread = Thread(target=self._run_build, daemon=True)
+        thread.start()
 
     @staticmethod
     def place_help(parent, row, column, text):
