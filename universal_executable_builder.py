@@ -1,13 +1,10 @@
-import os
-import shutil
-import subprocess
+import os, shutil, subprocess
 
 from pathlib import Path
 from sys import exit
 from threading import Thread
 
-import tkinter as tk
-import customtkinter as ctk
+import tkinter as tk, customtkinter as ctk
 
 from tkinter import filedialog, messagebox, simpledialog
 from CTkToolTip import CTkToolTip
@@ -123,7 +120,7 @@ class PyInstallerGUI(ctk.CTk):
         # Hidden Imports Section
         ctk.CTkLabel(main_frame, text="Hidden Imports (comma-separated)",
                      font=section_font).grid(row=6, column=0, sticky="w", pady=(5, 0))
-        self.place_help(main_frame, row=6, column=1, text = "Specify modules not auto-detected.")
+        self.place_help(main_frame, row=6, column=1, text="Specify modules not auto-detected.")
         hidden_frame = ctk.CTkFrame(main_frame)
         hidden_frame.grid(row=7, column=0, sticky="ew", padx=5, pady=5)
         hidden_frame.grid_columnconfigure(0, weight=1)
@@ -132,7 +129,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Icon Selection Section
         ctk.CTkLabel(main_frame, text="Icon", font=section_font).grid(row=8, column=0, sticky="w", pady=(5, 0))
-        self.place_help(main_frame, row=8, column=1, text = "Path to a .ico file to embed in your executable.")
+        self.place_help(main_frame, row=8, column=1, text="Path to a .ico file to embed in your executable.")
         icon_frame = ctk.CTkFrame(main_frame)
         icon_frame.grid(row=9, column=0, sticky="ew", padx=5, pady=5)
         icon_frame.grid_columnconfigure(1, weight=1)
@@ -144,7 +141,7 @@ class PyInstallerGUI(ctk.CTk):
         # Output Directory Section
         ctk.CTkLabel(main_frame, text="Output Directory",
                      font=section_font).grid(row=10, column=0, sticky="w", pady=(5, 0))
-        self.place_help(main_frame, row=10, column=1, text = "Destination folder for build output.")
+        self.place_help(main_frame, row=10, column=1, text="Destination folder for build output.")
         out_frame = ctk.CTkFrame(main_frame)
         out_frame.grid(row=11, column=0, sticky="ew", padx=5, pady=5)
         out_frame.grid_columnconfigure(1, weight=1)
@@ -156,15 +153,18 @@ class PyInstallerGUI(ctk.CTk):
         # Options Section (One-file toggle)
         self.onefile_check = ctk.CTkCheckBox(main_frame, text="Build one-file executable", variable=self.onefile)
         self.onefile_check.grid(row=12, column=0, sticky="w", padx=5, pady=5)
-        self.place_help(main_frame, row=12, column=1, text = "Choose single-file or folder build.")
+        self.place_help(main_frame, row=12, column=1, text="Choose single-file or folder build.")
 
         # Build Button
         self.build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
         self.build_button.grid(row=13, column=0, pady=10)
-        self.place_help(main_frame, row=14, column=1, text = "Displays real-time output from PyInstaller during build.")
+        self.place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build.")
 
         # Build Log Output
         ctk.CTkLabel(main_frame, text="Build Log", font=section_font).grid(row=14, column=0, sticky="w", pady=(5, 0))
+        # Copy log button on the same row, right side
+        ctk.CTkButton(main_frame, text="Copy log", width=110, command=self.copy_log).grid(row=14, column=0, padx=(6, 25),
+                                                                                          pady=(5, 0), sticky="e")
         # Text box for log output. CTkTextbox provides a scrollbar automatically in customtkinter >=5
         self.log_text = ctk.CTkTextbox(main_frame, height=180)
         self.log_text.grid(row=15, column=0, sticky="nsew", padx=5, pady=5)
@@ -179,7 +179,6 @@ class PyInstallerGUI(ctk.CTk):
             self.entry_point.set(file_path)
 
     def add_data_file(self):
-
         """
             Add a data file to include in the build.
         """
@@ -266,23 +265,50 @@ class PyInstallerGUI(ctk.CTk):
         if not self.entry_point.get():
             messagebox.showerror("Error", "Please select an entry point file.")
             return None
-        command = ["pyinstaller", self.entry_point.get(),
-                   "--onefile" if self.onefile.get() else "--onedir", "--noconsole"]
 
+        # Base command: onefile/onedir + no-console
+        command = \
+            [
+                "pyinstaller",
+                "--onefile" if self.onefile.get() else "--onedir",
+                "--noconsole",
+                "--exclude-module", "sitecustomize",
+                "--python-option", "O0",  # Basic bytecode optimization
+            ]
+
+        # UPX compression (if UPX is on PATH)
+        upx_path = shutil.which("upx")
+        if upx_path:
+            command.extend(["--upx-dir", os.path.dirname(upx_path)]) # Point PyInstaller to the directory containing UPX.exe
+
+        # Exclude common unneeded stdlib modules to reduce bundle size
+        for mod in ("unittest", "test", "pydoc"):
+            command.extend(["--exclude-module", mod])
+
+        # Target entry point
+        command.append(self.entry_point.get())
+
+        # Optional name override
         executable_name = self.executable_name.get().strip()
         if executable_name:
             command.extend(["--name", executable_name])
 
+        # Data files
         for data in self.data_files:
             command.extend(["--add-data", data])
+
+        # Hidden imports
         for hidden_import in filter(None, map(str.strip, self.hidden_imports.get().split(","))):
             command.extend(["--hidden-import", hidden_import])
 
-        icon = self.icon.get()
+        # Icon
+        icon = self.icon.get().strip()
         if icon:
             command.extend(["--icon", icon])
 
+        # Output directory
         command.extend(["--distpath", self.output_directory.get()])
+
         return command
 
     def _run_build(self):
@@ -334,6 +360,21 @@ class PyInstallerGUI(ctk.CTk):
         # Start background thread
         thread = Thread(target=self._run_build, daemon=True)
         thread.start()
+
+    def copy_log(self):
+        """
+            Copy the build log text to the clipboard.
+        """
+        try:
+            text = self.log_text.get("1.0", "end-1c")
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            # Ensure the clipboard is actually updated on Windows
+            self.update_idletasks()
+            # Optional: small confirmation
+            messagebox.showinfo("Log copied", "Build log copied to clipboard.")
+        except Exception as e:
+            messagebox.showerror("Copy failed", str(e))
 
     @staticmethod
     def place_help(parent, row, column, text):
