@@ -9,8 +9,6 @@ import tkinter as tk, customtkinter as ctk
 from tkinter import font as tkfont, filedialog, messagebox, simpledialog
 from CTkToolTip import CTkToolTip
 
-from functools import partial
-
 
 BUILD_DIRECTORY = "build"
 SPECIFICATION_EXTENSION = ".spec"
@@ -262,7 +260,7 @@ class PyInstallerGUI(ctk.CTk):
         """
             Schedule a log append on the GUI thread.
         """
-        self.after_idle(partial(self.append_log, text))
+        self.after_idle(self.append_log, text)
 
     @staticmethod
     def cleanup_build_artifacts():
@@ -331,7 +329,7 @@ class PyInstallerGUI(ctk.CTk):
         command = self.assemble_commands()
         if not command:
             # Re-enable the button if assemble failed
-            self.after_idle(partial(self.build_button.configure, state="normal"))
+            self.after_idle(self.build_button.configure, {"state": "normal"})
             return
 
         # Clean artifacts before build
@@ -357,7 +355,7 @@ class PyInstallerGUI(ctk.CTk):
             self.after_idle(messagebox.showerror, "Build Error", str(e))
         finally:
             self.cleanup_build_artifacts()  # Clean up artifacts after build
-            self.after_idle(partial(self.build_button.configure, state="normal"))  # Re-enable the build button
+            self.after_idle(self.build_button.configure, {"state": "normal"})  # Re-enable the build button
 
     def build_executable(self):
         """
