@@ -6,8 +6,10 @@ from threading import Thread
 
 import tkinter as tk, customtkinter as ctk
 
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import font as tkfont, filedialog, messagebox, simpledialog
 from CTkToolTip import CTkToolTip
+
+from functools import partial
 
 
 BUILD_DIRECTORY = "build"
@@ -78,8 +80,21 @@ class PyInstallerGUI(ctk.CTk):
         section_font = ("Segoe UI", 16, "bold")
         label_font = ("Segoe UI", 14, "bold")
 
+        def selectable_title(row, text):
+            pixel_width = tkfont.Font(font=section_font).measure(text) + 24 # Measure text width in pixels and add a bit of padding
+            pixel_width = max(pixel_width, 180) # Set a reasonable minimum so very short titles don’t look cramped
+
+            entry = ctk.CTkEntry(main_frame, width=pixel_width, border_width=0, fg_color="transparent",
+                text_color="white", font=section_font, corner_radius=0, justify="left")
+            entry.insert(0, text)
+            entry.configure(state="readonly")
+            entry.grid(row=row, column=0, sticky="w", pady=(5, 0))
+            entry.configure(cursor="xterm")  # normal text-selection cursor
+
+            return entry
+
         # Entry Point section
-        ctk.CTkLabel(main_frame, text="Entry Point", font=section_font).grid(row=0, column=0, sticky="w", pady=(5, 0))
+        selectable_title(0, "Entry Point")
         self.place_help(main_frame, row=0, column=1, text="Select the main .py file where your program starts.")
         entry_frame = ctk.CTkFrame(main_frame)
         entry_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
@@ -90,7 +105,7 @@ class PyInstallerGUI(ctk.CTk):
         ctk.CTkButton(entry_frame, text="Browse", command=self.browse_entry_point).grid(row=0, column=2, padx=5)
 
         # Executable Name Section
-        ctk.CTkLabel(main_frame, text="Executable Name", font=section_font).grid(row=2, column=0, sticky="w", pady=(5, 0))
+        selectable_title(2, "Executable Name")
         self.place_help(main_frame, row=2, column=1, text="Specifies the name of the generated .exe.")
         exe_frame = ctk.CTkFrame(main_frame)
         exe_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
@@ -100,8 +115,7 @@ class PyInstallerGUI(ctk.CTk):
         self.executable_name_entry.grid(row=0, column=1, sticky="ew", padx=5)
 
         # Additional Data Files section
-        ctk.CTkLabel(main_frame, text="Additional Data Files",
-                     font=section_font).grid(row=4, column=0, sticky="w", pady=(5, 0))
+        selectable_title(4, "Additional Data Files")
         self.place_help(main_frame, row=4, column=1, text="Include extra files/folders.")
         data_frame = ctk.CTkFrame(main_frame)
         data_frame.grid(row=5, column=0, sticky="ew", padx=5, pady=5)
@@ -118,9 +132,9 @@ class PyInstallerGUI(ctk.CTk):
                       command=self.remove_data_file).grid(row=1, column=2, padx=5, pady=5)
 
         # Hidden Imports Section
-        ctk.CTkLabel(main_frame, text="Hidden Imports (comma-separated)",
-                     font=section_font).grid(row=6, column=0, sticky="w", pady=(5, 0))
-        self.place_help(main_frame, row=6, column=1, text="Specify modules not auto-detected.")
+        selectable_title(6, "Hidden Imports (comma-separated)")
+        self.place_help(main_frame, row=6, column=1,
+                        text="Specify modules not auto-detected (package_a.submodule, mypkg.utils, etc.).")
         hidden_frame = ctk.CTkFrame(main_frame)
         hidden_frame.grid(row=7, column=0, sticky="ew", padx=5, pady=5)
         hidden_frame.grid_columnconfigure(0, weight=1)
@@ -128,7 +142,7 @@ class PyInstallerGUI(ctk.CTk):
         self.hidden_imports_entry.grid(row=0, column=0, sticky="ew", padx=5)
 
         # Icon Selection Section
-        ctk.CTkLabel(main_frame, text="Icon", font=section_font).grid(row=8, column=0, sticky="w", pady=(5, 0))
+        selectable_title(8, "Icon")
         self.place_help(main_frame, row=8, column=1, text="Path to a .ico file to embed in your executable.")
         icon_frame = ctk.CTkFrame(main_frame)
         icon_frame.grid(row=9, column=0, sticky="ew", padx=5, pady=5)
@@ -139,8 +153,7 @@ class PyInstallerGUI(ctk.CTk):
         ctk.CTkButton(icon_frame, text="Browse", command=self.browse_icon).grid(row=0, column=2, padx=5)
 
         # Output Directory Section
-        ctk.CTkLabel(main_frame, text="Output Directory",
-                     font=section_font).grid(row=10, column=0, sticky="w", pady=(5, 0))
+        selectable_title(10, "Output Directory")
         self.place_help(main_frame, row=10, column=1, text="Destination folder for build output.")
         out_frame = ctk.CTkFrame(main_frame)
         out_frame.grid(row=11, column=0, sticky="ew", padx=5, pady=5)
@@ -161,7 +174,7 @@ class PyInstallerGUI(ctk.CTk):
         self.place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build.")
 
         # Build Log Output
-        ctk.CTkLabel(main_frame, text="Build Log", font=section_font).grid(row=14, column=0, sticky="w", pady=(5, 0))
+        selectable_title(14, "Build Log")
         # Copy log button on the same row, right side
         ctk.CTkButton(main_frame, text="Copy log", width=110, command=self.copy_log).grid(row=14, column=0, padx=(6, 25),
                                                                                           pady=(5, 0), sticky="e")
@@ -249,7 +262,7 @@ class PyInstallerGUI(ctk.CTk):
         """
             Schedule a log append on the GUI thread.
         """
-        self.after_idle(self.append_log, text)
+        self.after_idle(partial(self.append_log, text))
 
     @staticmethod
     def cleanup_build_artifacts():
@@ -282,8 +295,8 @@ class PyInstallerGUI(ctk.CTk):
             command.extend(["--upx-dir", os.path.dirname(upx_path)]) # Point PyInstaller to the directory containing UPX.exe
 
         # Exclude common unneeded stdlib modules to reduce bundle size
-        for mod in ("unittest", "test", "pydoc"):
-            command.extend(["--exclude-module", mod])
+        for module in ("unittest", "test", "pydoc"):
+            command.extend(["--exclude-module", module])
 
         # Target entry point
         command.append(self.entry_point.get())
@@ -318,7 +331,7 @@ class PyInstallerGUI(ctk.CTk):
         command = self.assemble_commands()
         if not command:
             # Re-enable the button if assemble failed
-            self.after_idle(self.build_button.configure, {"state": "normal"})
+            self.after_idle(partial(self.build_button.configure, state="normal"))
             return
 
         # Clean artifacts before build
@@ -344,7 +357,7 @@ class PyInstallerGUI(ctk.CTk):
             self.after_idle(messagebox.showerror, "Build Error", str(e))
         finally:
             self.cleanup_build_artifacts()  # Clean up artifacts after build
-            self.after_idle(self.build_button.configure, {"state": "normal"})  # Re-enable the build button
+            self.after_idle(partial(self.build_button.configure, state="normal"))  # Re-enable the build button
 
     def build_executable(self):
         """
@@ -369,10 +382,9 @@ class PyInstallerGUI(ctk.CTk):
             text = self.log_text.get("1.0", "end-1c")
             self.clipboard_clear()
             self.clipboard_append(text)
-            # Ensure the clipboard is actually updated on Windows
-            self.update_idletasks()
-            # Optional: small confirmation
-            messagebox.showinfo("Log copied", "Build log copied to clipboard.")
+            self.update_idletasks() # Ensure the clipboard is actually updated on Windows
+            self._show_success_message("Build log copied to clipboard.")    # Confirmation message
+
         except Exception as e:
             messagebox.showerror("Copy failed", str(e))
 
@@ -393,6 +405,47 @@ class PyInstallerGUI(ctk.CTk):
                    bg_color="#2B2B2B", text_color="white", corner_radius=6, border_width=0,  border_color="#4A4A4A",
                    wraplength=200, padding=(8, 4), font=("Segoe UI", 15),justify="left",)
 
+    def _show_success_message(self, text: str, duration_ms: int = 10000):
+        """
+            Small fade-out popup near the bottom-right of the window.
+        """
+        success = ctk.CTkToplevel(self)
+        success.overrideredirect(True)
+        success.attributes("-topmost", True)
+        success.configure(fg_color="#2B2B2B")
+        message_label = ctk.CTkLabel(success, text=text, font=("Segoe UI", 12), text_color="white")
+        message_label.pack(padx=12, pady=8)
+
+        self.update_idletasks()
+        x = self.winfo_rootx() + self.winfo_width() - success.winfo_reqwidth() - 20
+        y = self.winfo_rooty() + self.winfo_height() - success.winfo_reqheight() - 20
+        success.geometry(f"+{x}+{y}")
+
+        steps = 25
+        interval = max(1, duration_ms // steps)
+        try:
+            success.attributes("-alpha", 0.95)
+        except tk.TclError:
+            # If the window vanished early, just stop.
+            return
+
+        def fade(step: int = steps) -> None:
+            if step <= 0 or not success.winfo_exists():
+                try:
+                    success.destroy()
+                except tk.TclError:
+                    pass
+                return
+
+            try:
+                success.attributes("-alpha", step / steps)
+                success.after(interval, fade, step - 1)  # Supply *args explicitly
+            except tk.TclError:
+                # Widget was likely destroyed or unavailable; ignore quietly.
+                pass
+
+        fade()
+
     def on_close(self):
         """
             Called when a window is closed—quits, destroys, and exits.
@@ -405,3 +458,5 @@ class PyInstallerGUI(ctk.CTk):
 if __name__ == "__main__":
     app = PyInstallerGUI()
     app.mainloop()
+
+# TODO: Auto update
