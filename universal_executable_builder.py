@@ -6,7 +6,7 @@ from threading import Thread
 
 import tkinter as tk, customtkinter as ctk
 
-from tkinter import font as tkfont, filedialog, messagebox, simpledialog
+from tkinter import font as tkfont, filedialog, messagebox, simpledialog, Misc
 from CTkToolTip import CTkToolTip
 
 
@@ -78,7 +78,10 @@ class PyInstallerGUI(ctk.CTk):
         section_font = ("Segoe UI", 16, "bold")
         label_font = ("Segoe UI", 14, "bold")
 
-        def selectable_title(row, text):
+        def selectable_title(row: int, text: str) -> ctk.CTkEntry:
+            """
+                Create and place a selectable, non-editable title entry.
+            """
             pixel_width = tkfont.Font(font=section_font).measure(text) + 24 # Measure text width in pixels and add a bit of padding
             pixel_width = max(pixel_width, 180) # Set a reasonable minimum so very short titles don’t look cramped
 
@@ -246,7 +249,7 @@ class PyInstallerGUI(ctk.CTk):
         if directory:
             self.output_directory.set(directory)
 
-    def append_log(self, text):
+    def append_log(self, text: str):
         """
             Insert into the read-only log.
         """
@@ -260,7 +263,7 @@ class PyInstallerGUI(ctk.CTk):
         """
             Schedule a log append on the GUI thread.
         """
-        self.after_idle(self.append_log, text)
+        self.after(0, self.append_log, text)
 
     @staticmethod
     def cleanup_build_artifacts():
@@ -272,9 +275,37 @@ class PyInstallerGUI(ctk.CTk):
         for specification in Path(".").glob(f"*{SPECIFICATION_EXTENSION}"):
             specification.unlink()
 
-    def assemble_commands(self):
+    def assemble_commands(self) -> list[str] | None:
+        """
+            Build the full PyInstaller command list based on the current GUI settings.
+
+            This method collects the user-specified build options from the GUI
+            (entry point, build mode, output directory, hidden imports, data files, icon, etc.)
+            and assembles them into a list of command-line arguments for invoking PyInstaller.
+
+            If no entry point is set, an error dialog is scheduled on the main thread
+            and the method returns ``None``.
+
+            The resulting command includes:
+              - ``--onefile`` or ``--onedir`` depending on the *Build one-file executable* checkbox.
+              - ``--noconsole`` to hide the console window in GUI applications.
+              - ``--exclude-module sitecustomize`` and common stdlib modules to reduce size.
+              - Optional UPX compression if UPX is found on the system PATH.
+              - The entry-point script path.
+              - Optional executable name override.
+              - Any additional data files specified.
+              - Any hidden imports specified.
+              - Optional icon file.
+              - Output directory path.
+
+            Returns
+            -------
+            list[str] | None
+                A list of strings representing the PyInstaller command-line arguments,
+                or ``None`` if no entry point was provided.
+        """
         if not self.entry_point.get():
-            messagebox.showerror("Error", "Please select an entry point file.")
+            self.after(0, messagebox.showerror, "Error", "Please select an entry point file.")
             return None
 
         # Base command: onefile/onedir + no-console
@@ -322,6 +353,23 @@ class PyInstallerGUI(ctk.CTk):
 
         return command
 
+    def _enable_build_button(self, *_: object) -> None:
+        """
+            Re-enable the **Build Executable** button in the GUI.
+
+            This helper is intended to be scheduled via ``after`` or ``after_idle``
+            from background threads, ensuring the button state is reset on the main
+            Tkinter thread. The ``*_`` parameter is present so the method can safely
+            accept and ignore any positional arguments passed by the scheduler.
+
+            Parameters
+            ----------
+            *_ : object
+                Ignored positional arguments; accepted to maintain compatibility
+                with Tkinter's event and scheduling callbacks.
+            """
+        self.build_button.configure(state="normal")
+
     def _run_build(self):
         """
             Runs in a background thread—executes PyInstaller and updates the log.
@@ -329,7 +377,7 @@ class PyInstallerGUI(ctk.CTk):
         command = self.assemble_commands()
         if not command:
             # Re-enable the button if assemble failed
-            self.after_idle(self.build_button.configure, {"state": "normal"})
+            self.after(0, self._enable_build_button, None)
             return
 
         # Clean artifacts before build
@@ -352,16 +400,16 @@ class PyInstallerGUI(ctk.CTk):
 
         except Exception as e:
             self._append_log_async(f"\nBuild failed: {e}\n")
-            self.after_idle(messagebox.showerror, "Build Error", str(e))
+            self.after(0, messagebox.showerror, "Build Error", str(e))
         finally:
             self.cleanup_build_artifacts()  # Clean up artifacts after build
-            self.after_idle(self.build_button.configure, {"state": "normal"})  # Re-enable the build button
+            self.after(0, self._enable_build_button, None)  # Re-enable the build button
 
     def build_executable(self):
         """
             Build the executable using PyInstaller with the selected options.
         """
-        if not self.entry_point:
+        if not self.entry_point.get():
             messagebox.showerror("Error", "Please select an entry point file.")
             return
 
@@ -387,7 +435,7 @@ class PyInstallerGUI(ctk.CTk):
             messagebox.showerror("Copy failed", str(e))
 
     @staticmethod
-    def place_help(parent, row, column, text):
+    def place_help(parent: Misc, row: int, column: int, text: str) -> None:
         """
             Place a small "?" button at (row, col) that shows "text" when clicked.
         """
@@ -428,6 +476,31 @@ class PyInstallerGUI(ctk.CTk):
             return
 
         def fade(step: int = steps) -> None:
+            """
+                Gradually fade out and destroy the `success` popup window.
+
+                This function reduces the window's alpha (opacity) in equal increments
+                until it becomes fully transparent, then destroys the window. It is
+                designed to be scheduled repeatedly using Tkinter's ``after`` method
+                until the fade-out animation completes.
+
+                Parameters
+                ----------
+                step : int, optional
+                    The number of remaining fade steps. Defaults to ``steps``, a preset
+                    total step count in the enclosing scope. Each call reduces this
+                    counter by 1.
+
+                Notes
+                -----
+                - The function first checks whether the window still exists and whether
+                  the fade should stop (``step <= 0``). If so, it destroys the window
+                  safely.
+                - Any ``tk.TclError`` exceptions (such as when the window is destroyed
+                  prematurely) are caught and ignored to avoid interrupting the GUI loop.
+                - Uses ``success.attributes("-alpha", value)`` to set opacity and
+                  schedules the next fade step with ``after(interval, fade, step - 1)``.
+            """
             if step <= 0 or not success.winfo_exists():
                 try:
                     success.destroy()
@@ -456,5 +529,3 @@ class PyInstallerGUI(ctk.CTk):
 if __name__ == "__main__":
     app = PyInstallerGUI()
     app.mainloop()
-
-# TODO: Auto update
