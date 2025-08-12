@@ -48,7 +48,7 @@ class PyInstallerGUI(ctk.CTk):
         self.hidden_imports = tk.StringVar()
         self.icon = tk.StringVar()
         self.output_directory = tk.StringVar(value="dist")
-        self.onefile = tk.BooleanVar(value=True)
+        self.onefile_mode = tk.BooleanVar(value=True)
         self.data_files = []  # List of data file specifications
 
         self.entry_point_entry = None
@@ -155,7 +155,9 @@ class PyInstallerGUI(ctk.CTk):
 
         # Output Directory Section
         selectable_title(10, "Output Directory")
-        self.place_help(main_frame, row=10, column=1, text="Destination folder for build output.")
+        self.place_help(main_frame, row=10, column=1, text="Destination folder for build output. The program will "
+                                                           "remove all .spec files inside the folder, if the folder "
+                                                           "already exists.")
         out_frame = ctk.CTkFrame(main_frame)
         out_frame.grid(row=11, column=0, sticky="ew", padx=5, pady=5)
         out_frame.grid_columnconfigure(1, weight=1)
@@ -165,14 +167,16 @@ class PyInstallerGUI(ctk.CTk):
         ctk.CTkButton(out_frame, text="Browse", command=self.browse_output_directory).grid(row=0, column=2, padx=5)
 
         # Options Section (One-file toggle)
-        self.onefile_check = ctk.CTkCheckBox(main_frame, text="Build one-file executable", variable=self.onefile)
+        self.onefile_check = ctk.CTkCheckBox(main_frame, text="Build one-file executable", variable=self.onefile_mode)
         self.onefile_check.grid(row=12, column=0, sticky="w", padx=5, pady=5)
         self.place_help(main_frame, row=12, column=1, text="Choose single-file or folder build.")
 
         # Build Button
         self.build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
         self.build_button.grid(row=13, column=0, pady=10)
-        self.place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build.")
+        self.place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build. "
+                                                           "Aborting a build might result in background process "
+                                                           "continuation or unexpected behaviour.")
 
         # Build Log Output
         selectable_title(14, "Build Log")
@@ -308,11 +312,16 @@ class PyInstallerGUI(ctk.CTk):
             self.after(0, messagebox.showerror, "Error", "Please select an entry point file.")
             return None
 
+        output_directory = self.output_directory.get().strip()
+        if not output_directory:
+            self.after(0, messagebox.showerror, "Error", "Please select an output directory.")
+            return None
+
         # Base command: onefile/onedir + no-console
         command = \
             [
                 "pyinstaller",
-                "--onefile" if self.onefile.get() else "--onedir",
+                "--onefile" if self.onefile_mode.get() else "--onedir",
                 "--noconsole",
                 "--exclude-module", "sitecustomize",
                 "--python-option", "O0",  # Basic bytecode optimization
@@ -349,7 +358,7 @@ class PyInstallerGUI(ctk.CTk):
             command.extend(["--icon", icon])
 
         # Output directory
-        command.extend(["--distpath", self.output_directory.get()])
+        command.extend(["--distpath", output_directory])
 
         return command
 
