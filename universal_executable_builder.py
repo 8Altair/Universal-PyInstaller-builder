@@ -38,7 +38,7 @@ class PyInstallerGUI(ctk.CTk):
         super().__init__()
         self.configure(fg_color="#1E1E1E")  # Forces the root window to a near-black
         self.title("Universal PyInstaller Builder")
-        self.geometry("900x900")
+        self.geometry("900x750")
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
