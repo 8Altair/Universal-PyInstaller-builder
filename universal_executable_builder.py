@@ -5,30 +5,16 @@ from sys import exit
 from threading import Thread
 
 import tkinter as tk, customtkinter as ctk
-
 from tkinter import font as tkfont, filedialog, messagebox, simpledialog, Misc
 from CTkToolTip import CTkToolTip
 
+from utility import BUILD_DIRECTORY, SPECIFICATION_EXTENSION
 
-BUILD_DIRECTORY = "build"
-SPECIFICATION_EXTENSION = ".spec"
 
 # Initialize CustomTkinter appearance (dark mode and theme accent)
-ctk.set_appearance_mode("Dark")            # Dark mode for modern look
-ctk.set_default_color_theme("blue")        # You can use "dark-blue" or others as needed
+ctk.set_appearance_mode("Dark") # Dark mode for modern look
+ctk.set_default_color_theme("blue") # You can use "dark-blue" or others as needed
 
-
-def no_operation(self, *args, **kwargs):    # Monkey-patch CTkToolTip so it satisfies the scaling tracker’s calls:
-
-    """
-        A no-op handler that matches the expected signature of:
-          block_update_dimensions_event(self)
-          unblock_update_dimensions_event(self)
-    """
-    return None
-
-CTkToolTip.block_update_dimensions_event = no_operation
-CTkToolTip.unblock_update_dimensions_event = no_operation
 
 class PyInstallerGUI(ctk.CTk):
     def __init__(self):
