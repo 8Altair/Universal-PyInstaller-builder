@@ -382,7 +382,9 @@ class PyInstallerGUI(ctk.CTk):
         self._append_log_async("Running command:\n" + " ".join(command) + "\n\n")
 
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, creationflags=creationflags,)
 
             for line in process.stdout: # Send each line back to the GUI thread
                 self._append_log_async(line)
