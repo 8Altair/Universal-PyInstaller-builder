@@ -44,5 +44,6 @@ def no_operation(self, *args, **kwargs):    # Monkey-patch CTkToolTip so it sati
     """
     return None
 
+
 CTkToolTip.block_update_dimensions_event = no_operation
 CTkToolTip.unblock_update_dimensions_event = no_operation

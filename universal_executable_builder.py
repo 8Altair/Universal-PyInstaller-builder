@@ -1,14 +1,12 @@
-import os, shutil, subprocess
+import os, shutil, subprocess, sys
 
 from pathlib import Path
-from sys import exit
 from threading import Thread
 
 import tkinter as tk, customtkinter as ctk
-from tkinter import font as tkfont, filedialog, messagebox, simpledialog, Misc
-from CTkToolTip import CTkToolTip
+from tkinter import font as tkfont, filedialog, messagebox, simpledialog
 
-from utility import BUILD_DIRECTORY, SPECIFICATION_EXTENSION
+from utility import cleanup_build_artifacts, place_help
 
 
 # Initialize CustomTkinter appearance (dark mode and theme accent)
@@ -82,7 +80,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Entry Point section
         selectable_title(0, "Entry Point")
-        self.place_help(main_frame, row=0, column=1, text="Select the main .py file where your program starts.")
+        place_help(main_frame, row=0, column=1, text="Select the main .py file where your program starts.")
         entry_frame = ctk.CTkFrame(main_frame)
         entry_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         entry_frame.grid_columnconfigure(1, weight=1)  # Make the entry field expand in this frame
@@ -93,7 +91,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Executable Name Section
         selectable_title(2, "Executable Name")
-        self.place_help(main_frame, row=2, column=1, text="Specifies the name of the generated .exe.")
+        place_help(main_frame, row=2, column=1, text="Specifies the name of the generated .exe.")
         exe_frame = ctk.CTkFrame(main_frame)
         exe_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
         exe_frame.grid_columnconfigure(1, weight=1)
@@ -103,7 +101,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Additional Data Files section
         selectable_title(4, "Additional Data Files")
-        self.place_help(main_frame, row=4, column=1, text="Include extra files/folders.")
+        place_help(main_frame, row=4, column=1, text="Include extra files/folders.")
         data_frame = ctk.CTkFrame(main_frame)
         data_frame.grid(row=5, column=0, sticky="ew", padx=5, pady=5)
         data_frame.grid_columnconfigure((0, 1, 2), weight=1)  # Distribute extra space across three columns
@@ -120,7 +118,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Hidden Imports Section
         selectable_title(6, "Hidden Imports (comma-separated)")
-        self.place_help(main_frame, row=6, column=1,
+        place_help(main_frame, row=6, column=1,
                         text="Specify modules not auto-detected (package_a.submodule, mypkg.utils, etc.).")
         hidden_frame = ctk.CTkFrame(main_frame)
         hidden_frame.grid(row=7, column=0, sticky="ew", padx=5, pady=5)
@@ -130,7 +128,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Icon Selection Section
         selectable_title(8, "Icon")
-        self.place_help(main_frame, row=8, column=1, text="Path to a .ico file to embed in your executable.")
+        place_help(main_frame, row=8, column=1, text="Path to a .ico file to embed in your executable.")
         icon_frame = ctk.CTkFrame(main_frame)
         icon_frame.grid(row=9, column=0, sticky="ew", padx=5, pady=5)
         icon_frame.grid_columnconfigure(1, weight=1)
@@ -141,7 +139,7 @@ class PyInstallerGUI(ctk.CTk):
 
         # Output Directory Section
         selectable_title(10, "Output Directory")
-        self.place_help(main_frame, row=10, column=1, text="Destination folder for build output. The program will "
+        place_help(main_frame, row=10, column=1, text="Destination folder for build output. The program will "
                                                            "remove all .spec files inside the folder, if the folder "
                                                            "already exists.")
         out_frame = ctk.CTkFrame(main_frame)
@@ -155,12 +153,12 @@ class PyInstallerGUI(ctk.CTk):
         # Options Section (One-file toggle)
         self.onefile_check = ctk.CTkCheckBox(main_frame, text="Build one-file executable", variable=self.onefile_mode)
         self.onefile_check.grid(row=12, column=0, sticky="w", padx=5, pady=5)
-        self.place_help(main_frame, row=12, column=1, text="Choose single-file or folder build.")
+        place_help(main_frame, row=12, column=1, text="Choose single-file or folder build.")
 
         # Build Button
         self.build_button = ctk.CTkButton(main_frame, text="Build Executable", command=self.build_executable)
         self.build_button.grid(row=13, column=0, pady=10)
-        self.place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build. "
+        place_help(main_frame, row=14, column=1, text="Displays real-time output from PyInstaller during build. "
                                                            "Aborting a build might result in background process "
                                                            "continuation or unexpected behaviour.")
 
@@ -255,15 +253,43 @@ class PyInstallerGUI(ctk.CTk):
         """
         self.after(0, self.append_log, text)
 
-    @staticmethod
-    def cleanup_build_artifacts():
+    def _pyinstaller_invoker(self) -> list[str]:
         """
-            Clean previous PyInstaller build artifacts.
+            Resolve the exact command used to invoke PyInstaller.
+
+            Search order (first match wins):
+              1) A `.venv` next to the *target entry script* (…/project/.venv/Scripts/python.exe -m PyInstaller).
+              2) If this app is frozen: a `.venv` next to our own EXE.
+              3) When running from source: the current interpreter (`sys.executable -m PyInstaller`).
+              4) Fallback: `pyinstaller` on PATH.
+
+            Returns
+            -------
+            list[str]
+                The argv head for invoking PyInstaller, e.g.
+                `[<python>, "-m", "PyInstaller"]` or `["pyinstaller"]`.
         """
-        if Path(BUILD_DIRECTORY).is_dir():
-            shutil.rmtree(BUILD_DIRECTORY)
-        for specification in Path(".").glob(f"*{SPECIFICATION_EXTENSION}"):
-            specification.unlink()
+        entry = Path(self.entry_point.get()).resolve()
+
+        # Prefer a .venv next to the target entry script
+        venv_directory = entry.parent / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+        venv_python = venv_directory / ("python.exe" if os.name == "nt" else "python3")
+        if venv_python.exists():
+            return [str(venv_python), "-m", "PyInstaller"]
+
+        # If *we* are frozen, prefer a .venv next to our EXE
+        if getattr(sys, "frozen", False):
+            application_directory = Path(sys.executable).resolve().parent
+            venv_directory = application_directory / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+            venv_python = venv_directory / ("python.exe" if os.name == "nt" else "python3")
+            if venv_python.exists():
+                return [str(venv_python), "-m", "PyInstaller"]
+
+        # Running from source: use this interpreter
+        if not getattr(sys, "frozen", False):
+            return [sys.executable, "-m", "PyInstaller"]
+
+        return ["pyinstaller"]
 
     def assemble_commands(self) -> list[str] | None:
         """
@@ -306,7 +332,7 @@ class PyInstallerGUI(ctk.CTk):
         # Base command: onefile/onedir + no-console
         command = \
             [
-                "pyinstaller",
+                *self._pyinstaller_invoker(),
                 "--onefile" if self.onefile_mode.get() else "--onedir",
                 "--noconsole",
                 "--exclude-module", "sitecustomize",
@@ -375,16 +401,67 @@ class PyInstallerGUI(ctk.CTk):
             self.after(0, self._enable_build_button, None)
             return
 
-        # Clean artifacts before build
-        self.cleanup_build_artifacts()
+        cleanup_build_artifacts()   # Clean artifacts before build
 
         # Log the command asynchronously
         self._append_log_async("Running command:\n" + " ".join(command) + "\n\n")
 
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            env = os.environ.copy()
+
+            # If we are invoking "python.exe -m PyInstaller", command[0] is that python
+            py_exe = None
+            if command and isinstance(command[0], str):
+                low = command[0].lower()
+                if low.endswith("python.exe") or low.endswith("python"):
+                    py_exe = Path(command[0])
+
+            def _base_prefix(python_exe: Path) -> Path | None:
+                """
+                    Return the `sys.base_prefix` directory for the given Python interpreter.
+
+                    This runs:  <python_exe> -c "import sys; print(sys.base_prefix)"
+                    and parses the output. If the interpreter cannot be called or returns a
+                    non-zero exit status, `None` is returned.
+
+                    Parameters
+                    ----------
+                    python_exe : Path
+                        Fully-qualified path to a Python interpreter (e.g., .../python.exe).
+
+                    Returns
+                    -------
+                    Path | None
+                        Base prefix directory, or `None` if it cannot be determined.
+                """
+                try:
+                    output = subprocess.check_output([str(python_exe), "-c",
+                                                   "import sys; print(sys.base_prefix)"],
+                                                  text=True, creationflags=(subprocess.CREATE_NO_WINDOW
+                                                                            if os.name == "nt" else 0))
+                    return Path(output.strip())
+                except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+                    return None
+
+            if os.name == "nt":
+                base = _base_prefix(py_exe) if py_exe and py_exe.exists() else None
+
+                # Fallback: if we didn't call via python -m, try to locate the pyinstaller host Python
+                if base is None:
+                    pyinstaller_exe = shutil.which("pyinstaller")
+                    if pyinstaller_exe:
+                        base = Path(pyinstaller_exe).parent.parent  # ...\Python3xx\
+
+                if base:
+                    tcl = base / "tcl" / "tcl8.6"
+                    t_k = base / "tcl" / "tk8.6"
+                    if tcl.is_dir() and t_k.is_dir():
+                        env["TCL_LIBRARY"] = str(tcl)
+                        env["TK_LIBRARY"] = str(t_k)
+
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       text=True, creationflags=creationflags,)
+                                       text=True, creationflags=creationflags, env=env,)
 
             for line in process.stdout: # Send each line back to the GUI thread
                 self._append_log_async(line)
@@ -399,7 +476,7 @@ class PyInstallerGUI(ctk.CTk):
             self._append_log_async(f"\nBuild failed: {e}\n")
             self.after(0, messagebox.showerror, "Build Error", str(e))
         finally:
-            self.cleanup_build_artifacts()  # Clean up artifacts after build
+            cleanup_build_artifacts()  # Clean up artifacts after build
             self.after(0, self._enable_build_button, None)  # Re-enable the build button
 
     def build_executable(self):
@@ -430,23 +507,6 @@ class PyInstallerGUI(ctk.CTk):
 
         except Exception as e:
             messagebox.showerror("Copy failed", str(e))
-
-    @staticmethod
-    def place_help(parent: Misc, row: int, column: int, text: str) -> None:
-        """
-            Place a small "?" button at (row, col) that shows "text" when clicked.
-        """
-        # Create a CTkButton with equal width/height and corner_radius to make it a circle
-        size = 24
-        button = ctk.CTkButton(parent, text="❓", width=size, height=size, corner_radius=size // 2, fg_color="#3A3A3A",
-            hover_color="#4A4A4A", text_color="white", font=("", 10, "bold"), border_width=0,
-            command=lambda: None)
-        button.grid(row=row, column=column, sticky="n", padx=(2, 10))
-
-        # Attach a tooltip that appears on hover
-        CTkToolTip(widget=button, message=text, delay=0.3, follow=True,  x_offset=10, y_offset=10, alpha=0.9,
-                   bg_color="#2B2B2B", text_color="white", corner_radius=6, border_width=0,  border_color="#4A4A4A",
-                   wraplength=200, padding=(8, 4), font=("Segoe UI", 15),justify="left",)
 
     def _show_success_message(self, text: str, duration_ms: int = 10000):
         """
